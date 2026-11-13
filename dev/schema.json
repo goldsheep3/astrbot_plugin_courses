@@ -54,7 +54,8 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/override"
-      }
+      },
+      "description": "课表覆盖项。当前格式为提案（见 $defs.override），插件按容错方式解析。"
     }
   },
   "$defs": {
@@ -296,11 +297,44 @@
     },
     "override": {
       "type": "object",
-      "description": "覆盖项占位。当前 overrides 为空；未来建议使用 session_ref 引用 courses.id:session.id。",
+      "description": "课表覆盖项（格式尚未定稿）。session_ref 指向 courses.id:session.id；type 缺省时按出现字段推断。解析器容错：无法识别的条目会被静默忽略。",
       "properties": {
         "session_ref": {
           "type": "string",
           "pattern": "^[^:]+:[^:]+$"
+        },
+        "type": {
+          "enum": [
+            "cancel",
+            "move",
+            "add"
+          ],
+          "description": "cancel=停课，move=改时间/地点/日期，add=额外补课"
+        },
+        "date": {
+          "$ref": "#/$defs/date",
+          "description": "生效日期；cancel 缺省表示整学期停课，move 表示调到该日"
+        },
+        "start": {
+          "$ref": "#/$defs/time"
+        },
+        "end": {
+          "$ref": "#/$defs/time"
+        },
+        "periods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "note": {
+          "type": "string"
         }
       },
       "additionalProperties": true

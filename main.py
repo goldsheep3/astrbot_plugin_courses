@@ -13,6 +13,7 @@ from timetable_service import (
     TimetableError,
     TimetableStore,
     format_agenda,
+    format_exams,
     format_reminder,
     pending_reminders,
 )
@@ -71,6 +72,7 @@ class CourseTimetablePlugin(Star):
     async def _reminder_loop(self) -> None:
         while True:
             try:
+                await self._dispatch_morning_reports()
                 await self._dispatch_reminders()
             except asyncio.CancelledError:
                 raise
@@ -78,16 +80,49 @@ class CourseTimetablePlugin(Star):
                 self.logger.warning(f"课程提醒巡检失败：{exc}")
             await asyncio.sleep(self.REMINDER_TICK_SECONDS)
 
+    async def _dispatch_morning_reports(self) -> None:
+        """Push today's agenda once per day at the configured time."""
+        now = datetime.now()
+        sent = self.store.sent_keys(now)
+        for user_id in self.store.users():
+            raw = self.store.get_setting(f"morning_report:{user_id}")
+            if not raw:
+                continue
+            try:
+                report_time = datetime.strptime(str(raw), "%H:%M").time()
+            except ValueError:
+                continue
+            if now.time() < report_time:
+                continue
+            key = f"morning@{now.date().isoformat()}"
+            if key in sent:
+                continue
+            session = self.store.session_of(user_id)
+            if not session:
+                continue
+            try:
+                agenda = format_agenda(self.store.load(user_id), now.date())
+                await self.context.send_message(session, MessageChain().message(agenda))
+            except Exception as exc:
+                self.logger.warning(f"早报推送失败（{user_id}）：{exc}")
+                continue
+            self.store.mark_sent([key], now)
+
     async def _dispatch_reminders(self) -> None:
         now = datetime.now()
-        sent = self.store.sent_keys()
+        sent = self.store.sent_keys(now)
         for user_id in self.store.users_with_reminders():
             session = self.store.session_of(user_id)
             if not session:
                 continue
             try:
                 data = self.store.load(user_id)
-                due = pending_reminders(data, self.store.list_reminders(user_id), now, sent)
+                due = pending_reminders(
+                    data,
+                    self.store.list_reminders(user_id),
+                    now,
+                    {key.split("|", 1)[1] for key in sent if key.startswith(f"{user_id}|")},
+                )
             except TimetableError as exc:
                 self.logger.warning(f"用户 {user_id} 的课表或提醒无效，跳过：{exc}")
                 continue
@@ -98,19 +133,50 @@ class CourseTimetablePlugin(Star):
                 except Exception as exc:
                     self.logger.warning(f"提醒推送失败（{item['key']}）：{exc}")
                     continue
-                delivered.append(item["key"])
+                delivered.append(f"{user_id}|{item['key']}")
             if delivered:
                 self.store.mark_sent(delivered, now)
 
     @filter.command("课表")
     async def timetable(self, event: AstrMessageEvent):
-        """查询课表：/课表 今天、明天、日期 YYYY-MM-DD、导入示例、提醒"""
+        """查询课表：/课表 今天、明天、日期 YYYY-MM-DD、考试、提醒、早报 HH:MM、导入示例"""
         argument = event.message_str.removeprefix("/课表").strip()
         user_id = self._touch_session(event)
         try:
             if argument == "导入示例":
                 data = self.store.import_example(user_id)
                 yield event.plain_result(f"已导入「{data['title']}」示例课表（覆盖原有课表）。")
+                return
+            if argument.startswith("早报"):
+                setting = argument.removeprefix("早报").strip()
+                if setting in ("关", "关闭", "off"):
+                    self.store.set_setting(f"morning_report:{user_id}", None)
+                    yield event.plain_result("早报已关闭。")
+                    return
+                if not setting:
+                    current = self.store.get_setting(f"morning_report:{user_id}")
+                    yield event.plain_result(
+                        f"当前早报时间：{current}" if current else "早报未开启。用法：/课表 早报 07:30"
+                    )
+                    return
+                try:
+                    datetime.strptime(setting, "%H:%M")
+                except ValueError:
+                    yield event.plain_result("时间格式应为 HH:MM，例如 /课表 早报 07:30")
+                    return
+                self.store.set_setting(f"morning_report:{user_id}", setting)
+                yield event.plain_result(f"早报已设置：每天 {setting} 推送当天课表。")
+                return
+            if argument.startswith("考试"):
+                target_text = argument.removeprefix("考试").strip()
+                today = date.today()
+                if target_text in ("", "今天"):
+                    target = today
+                elif target_text == "明天":
+                    target = today + timedelta(days=1)
+                else:
+                    target = date.fromisoformat(target_text.removeprefix("日期 ").strip())
+                yield event.plain_result(format_exams(self.store.load(user_id), target))
                 return
             if argument == "提醒":
                 reminders = self.store.list_reminders(user_id)
@@ -179,6 +245,14 @@ class CourseTimetablePlugin(Star):
             return "排课已删除。"
         except TimetableError as exc:
             return f"删除失败：{exc}"
+
+    @filter.llm_tool(name="timetable_exams")
+    async def timetable_exams(self, event: AstrMessageEvent, target_date: str) -> str:
+        """查询指定日期（YYYY-MM-DD）的考试安排，含科目、类型、时间与地点。"""
+        try:
+            return format_exams(self.store.load(self._touch_session(event)), date.fromisoformat(target_date))
+        except (TimetableError, ValueError) as exc:
+            return f"查询失败：{exc}"
 
     @filter.llm_tool(name="timetable_set_reminder")
     async def timetable_set_reminder(self, event: AstrMessageEvent, course_id: str, session_id: str, minutes_before: int) -> str:

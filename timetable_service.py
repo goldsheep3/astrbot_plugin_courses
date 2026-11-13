@@ -85,48 +85,257 @@ def validate_timetable(data: dict[str, Any]) -> None:
                 raise TimetableError(f"课程 {course_id}/{session_id} 引用了不存在的教师")
 
 
+OVERRIDE_CANCEL = {"cancel", "cancelled", "canceled", "off", "skip", "停课", "取消", "停"}
+OVERRIDE_MOVE = {"move", "reschedule", "change", "shift", "调课", "调整", "换教室", "改期"}
+OVERRIDE_ADD = {"add", "extra", "makeup", "补课", "加课"}
+
+
+def _override_kind(override: dict[str, Any]) -> str:
+    """Classify an override entry.
+
+    ``dev/schema.json`` leaves ``override`` open (only ``session_ref`` is
+    pinned), so the parser accepts several spellings and falls back to
+    ``unknown`` instead of guessing wrongly.  Unknown entries are ignored by
+    ``occurrences_on`` so a half-designed override can never corrupt the
+    timetable view.
+    """
+    raw = override.get("type") or override.get("kind") or override.get("action") or ""
+    kind = str(raw).strip().lower()
+    if kind in OVERRIDE_CANCEL or override.get("cancelled") or override.get("cancel"):
+        return "cancel"
+    if kind in OVERRIDE_ADD or override.get("add") or override.get("makeup"):
+        return "add"
+    if kind in OVERRIDE_MOVE:
+        return "move"
+    if any(key in override for key in ("date", "start", "end", "periods", "location", "day")):
+        return "move"
+    return "unknown"
+
+
+def _override_date(override: dict[str, Any]) -> date | None:
+    """Date an override targets, ``None`` when it applies to every week.
+
+    Unparseable dates collapse to ``date.min`` so the entry simply never
+    matches instead of taking the whole timetable down with it.
+    """
+    raw = override.get("date") or override.get("on") or override.get("day_date")
+    if not raw:
+        return None
+    try:
+        return _parse_date(str(raw))
+    except TimetableError:
+        return date.min
+
+
+def _resolve_session(
+    data: dict[str, Any], session_ref: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    course_id, _, session_id = str(session_ref).partition(":")
+    for course in data["courses"]:
+        if course["id"] != course_id:
+            continue
+        for session in course["sessions"]:
+            if session["id"] == session_id:
+                return course, session
+    return None
+
+
+def _build_event(
+    course: dict[str, Any],
+    session: dict[str, Any],
+    target: date,
+    periods: dict[int, dict[str, Any]],
+    *,
+    period_indexes: list[int] | None = None,
+    location: str | None = None,
+    week: int | None = None,
+    source: str = "schedule",
+) -> dict[str, Any]:
+    teachers = {teacher["index"]: teacher["name"] for teacher in course["teachers"]}
+    chosen = period_indexes if period_indexes is not None else session["periods"]
+    session_periods = [periods[index] for index in sorted(chosen)]
+    return {
+        "course_id": course["id"],
+        "session_id": session["id"],
+        "course_name": course["name"],
+        "week": week,
+        "date": target.isoformat(),
+        "start": min(p["start"] for p in session_periods),
+        "end": max(p["end"] for p in session_periods),
+        "periods": [p["index"] for p in session_periods],
+        "location": location or session["location"]["raw"],
+        "teachers": [teachers[teacher] for teacher in session["teachers"]],
+        "source": source,
+    }
+
+
 def occurrences_on(data: dict[str, Any], target: date) -> list[dict[str, Any]]:
-    """Expand recurring sessions into chronologically ordered events for a date."""
+    """Expand recurring sessions into chronologically ordered events for a date.
+
+    ``overrides`` are applied afterwards: cancelled entries are dropped, moved
+    entries shift date/period/location, and extra entries are appended.
+    """
     validate_timetable(data)
     first_monday = _parse_date(data["calendar"]["first_monday"])
     delta_days = (target - first_monday).days
     week, weekday = divmod(delta_days, 7)
     week += 1
-    if week < 1 or week > data["calendar"]["week_count"]:
-        return []
     periods = {p["index"]: p for p in data["periods"]}
     result: list[dict[str, Any]] = []
-    for course in data["courses"]:
-        teachers = {teacher["index"]: teacher["name"] for teacher in course["teachers"]}
-        for session in course["sessions"]:
-            if week not in session["weeks"] or session["day"] != weekday + 1:
-                continue
-            session_periods = [periods[index] for index in sorted(session["periods"])]
-            result.append({
-                "course_id": course["id"],
-                "session_id": session["id"],
-                "course_name": course["name"],
-                "week": week,
-                "date": target.isoformat(),
-                "start": min(p["start"] for p in session_periods),
-                "end": max(p["end"] for p in session_periods),
-                "periods": [p["index"] for p in session_periods],
-                "location": session["location"]["raw"],
-                "teachers": [teachers[teacher] for teacher in session["teachers"]],
-            })
+    if 1 <= week <= data["calendar"]["week_count"]:
+        for course in data["courses"]:
+            for session in course["sessions"]:
+                if week not in session["weeks"] or session["day"] != weekday + 1:
+                    continue
+                result.append(_build_event(course, session, target, periods, week=week))
+    result = _apply_overrides(data, result, target, periods, week)
     return sorted(result, key=lambda item: item["start"])
 
+
+def _patch_event(
+    event: dict[str, Any], override: dict[str, Any], periods: dict[int, dict[str, Any]]
+) -> None:
+    """Apply a same-day move: shift times, periods or location in place."""
+    for key in ("start", "end"):
+        value = override.get(key)
+        if isinstance(value, str) and value:
+            event[key] = value
+    location = override.get("location")
+    if isinstance(location, str) and location:
+        event["location"] = location
+    elif isinstance(location, dict) and location.get("raw"):
+        event["location"] = location["raw"]
+    if isinstance(override.get("periods"), list) and override["periods"]:
+        indexes = [int(i) for i in override["periods"] if int(i) in periods]
+        if indexes:
+            event["periods"] = sorted(indexes)
+            event["start"] = min(periods[i]["start"] for i in indexes)
+            event["end"] = max(periods[i]["end"] for i in indexes)
+    event["source"] = "override"
+
+
+def _apply_overrides(
+    data: dict[str, Any],
+    events: list[dict[str, Any]],
+    target: date,
+    periods: dict[int, dict[str, Any]],
+    week: int,
+) -> list[dict[str, Any]]:
+    overrides = data.get("overrides") or []
+    if not overrides:
+        return events
+
+    by_ref: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        by_ref.setdefault(f"{event['course_id']}:{event['session_id']}", []).append(event)
+
+    kept: list[dict[str, Any]] = []
+    dropped_refs: set[str] = set()
+    for event in events:
+        ref = f"{event['course_id']}:{event['session_id']}"
+        for override in overrides:
+            if str(override.get("session_ref", "")) != ref:
+                continue
+            kind = _override_kind(override)
+            moved_to = _override_date(override)
+            if kind == "cancel":
+                if moved_to is None or moved_to == target:
+                    dropped_refs.add(ref)
+                    break
+                continue
+            if kind == "move":
+                if moved_to is not None and moved_to != target:
+                    # Moved away from this date; it reappears on ``moved_to``.
+                    dropped_refs.add(ref)
+                    break
+                _patch_event(event, override, periods)
+                break
+        if ref not in dropped_refs:
+            kept.append(event)
+
+    for override in overrides:
+        kind = _override_kind(override)
+        if kind not in ("move", "add"):
+            continue
+        if _override_date(override) != target:
+            continue
+        ref = str(override.get("session_ref", ""))
+        if ref in by_ref:
+            # The session already runs on this date, so it was patched above.
+            continue
+        resolved = _resolve_session(data, ref)
+        if resolved is None:
+            continue
+        course, session = resolved
+        indexes = override.get("periods") or session["periods"]
+        indexes = [int(i) for i in indexes if int(i) in periods]
+        if not indexes:
+            continue
+        location = override.get("location") or session["location"]["raw"]
+        kept.append(
+            _build_event(
+                course,
+                session,
+                target,
+                periods,
+                period_indexes=indexes,
+                location=location if isinstance(location, str) else session["location"]["raw"],
+                week=week if week >= 1 else None,
+                source="override",
+            )
+        )
+    return kept
+
+
+def exams_on(data: dict[str, Any], target: date) -> list[dict[str, Any]]:
+    """Return exams scheduled on ``target``, earliest first."""
+    result: list[dict[str, Any]] = []
+    for exam in data.get("exams") or []:
+        if not isinstance(exam, dict):
+            continue
+        try:
+            exam_date = _parse_date(str(exam.get("time") or exam.get("date")))
+        except TimetableError:
+            continue
+        if exam_date == target:
+            result.append(exam)
+    return sorted(result, key=lambda item: str(item.get("start_at", "")))
+
+
+def format_exams(data: dict[str, Any], target: date) -> str:
+    exams = exams_on(data, target)
+    if not exams:
+        return f"{target.isoformat()} 没有考试安排。"
+    lines = [f"{target.isoformat()} 考试："]
+    for exam in exams:
+        location = exam.get("location") or {}
+        place = location.get("raw") if isinstance(location, dict) else str(location)
+        lines.append(
+            f"{exam.get('start_at', '?')}-{exam.get('end_at', '?')} "
+            f"{exam.get('course', '?')}（{exam.get('type', '考试')}）｜{place or '地点待定'}"
+        )
+    return "\n".join(lines)
 
 def format_agenda(data: dict[str, Any], target: date) -> str:
     events = occurrences_on(data, target)
     header = f"{target.isoformat()}（第{((target - _parse_date(data['calendar']['first_monday'])).days // 7) + 1}周，周{WEEKDAY_NAMES[target.weekday()]}）"
+    exams = exams_on(data, target)
+    exam_lines = []
+    for exam in exams:
+        location = exam.get("location") or {}
+        place = location.get("raw") if isinstance(location, dict) else str(location)
+        exam_lines.append(
+            f"【{exam.get('type', '考试')}】{exam.get('course', '?')} "
+            f"{exam.get('start_at', '?')}-{exam.get('end_at', '?')}｜{place or '地点待定'}"
+        )
     if not events:
-        return f"{header}\n当天没有课程。"
-    lines = [header]
+        return "\n".join([f"{header}\n当天没有课程。", *exam_lines])
+    lines = [header, *exam_lines]
     for event in events:
         lines.append(
             f"{event['start']}-{event['end']} 第{','.join(map(str, event['periods']))}节 "
             f"{event['course_name']}｜{event['location']}｜{('、'.join(event['teachers']))}"
+            + ("（调课）" if event.get("source") == "override" else "")
         )
     return "\n".join(lines)
 
@@ -284,6 +493,17 @@ class TimetableStore:
         except (json.JSONDecodeError, AttributeError):
             return None
 
+    def users(self) -> list[str]:
+        """Every user that has a timetable file on disk."""
+        if not self.root.exists():
+            return []
+        reserved = {"sessions.json", "settings.json", "sent_reminders.json"}
+        return sorted(
+            path.stem
+            for path in self.root.glob("*.json")
+            if path.name not in reserved and not path.name.endswith(".reminders.json")
+        )
+
     def users_with_reminders(self) -> list[str]:
         """User ids that currently have a reminder file on disk."""
         if not self.root.exists():
@@ -292,6 +512,46 @@ class TimetableStore:
             path.name[: -len(".reminders.json")]
             for path in self.root.glob("*.reminders.json")
         )
+
+    def _settings_path(self) -> Path:
+        return self.root / "settings.json"
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        path = self._settings_path()
+        if not path.exists():
+            return default
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return default
+        return data.get(key, default) if isinstance(data, dict) else default
+
+    def set_setting(self, key: str, value: Any) -> None:
+        path = self._settings_path()
+        data: dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    data = loaded
+            except json.JSONDecodeError:
+                data = {}
+        if value is None:
+            data.pop(key, None)
+        else:
+            data[key] = value
+        self.root.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def morning_report_time(self, user_id: str) -> time | None:
+        """Daily agenda push time for one user, or None when disabled."""
+        raw = self.get_setting(f"morning_report:{self.normalize(user_id)}")
+        if not raw:
+            return None
+        try:
+            return _parse_time(str(raw))
+        except TimetableError:
+            return None
 
     def sent_keys(self, now: datetime | None = None) -> set[str]:
         """Idempotency keys of reminders already delivered (kept for 7 days)."""
