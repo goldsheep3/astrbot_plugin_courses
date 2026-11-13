@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# 插件运行期数据（兜底路径，正常走 AstrBot plugin_data）
+/data/

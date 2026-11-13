@@ -136,10 +136,15 @@ class TimetableStore:
     root: Path
     example_path: Path | None = None
 
+    @staticmethod
+    def normalize(user_id: str) -> str:
+        """Map a platform user id to the key used for every file on disk."""
+        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(user_id))
+        return safe_id or "anonymous"
+
     def _path(self, user_id: str) -> Path:
         # User ids come from the platform; still make the filename safe.
-        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in user_id)
-        return self.root / f"{safe_id or 'anonymous'}.json"
+        return self.root / f"{self.normalize(user_id)}.json"
 
     def load(self, user_id: str) -> dict[str, Any]:
         path = self._path(user_id)
@@ -244,3 +249,121 @@ class TimetableStore:
             return False
         self._reminder_path(user_id).write_text(json.dumps(after, ensure_ascii=False, indent=2), encoding="utf-8")
         return True
+
+
+    def _sessions_path(self) -> Path:
+        return self.root / "sessions.json"
+
+    def _sent_path(self) -> Path:
+        return self.root / "sent_reminders.json"
+
+    def bind_session(self, user_id: str, session_ref: str) -> None:
+        """Remember where to push reminders for a user (last active chat wins)."""
+        if not session_ref:
+            return
+        path = self._sessions_path()
+        mapping: dict[str, str] = {}
+        if path.exists():
+            try:
+                mapping = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                mapping = {}
+        user_id = self.normalize(user_id)
+        if mapping.get(user_id) == session_ref:
+            return
+        mapping[user_id] = session_ref
+        self.root.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def session_of(self, user_id: str) -> str | None:
+        path = self._sessions_path()
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get(self.normalize(user_id))
+        except (json.JSONDecodeError, AttributeError):
+            return None
+
+    def users_with_reminders(self) -> list[str]:
+        """User ids that currently have a reminder file on disk."""
+        if not self.root.exists():
+            return []
+        return sorted(
+            path.name[: -len(".reminders.json")]
+            for path in self.root.glob("*.reminders.json")
+        )
+
+    def sent_keys(self, now: datetime | None = None) -> set[str]:
+        """Idempotency keys of reminders already delivered (kept for 7 days)."""
+        path = self._sent_path()
+        if not path.exists():
+            return set()
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return set()
+        cutoff = ((now or datetime.now()) - timedelta(days=7)).isoformat(timespec="minutes")
+        return {key for key, stamp in raw.items() if isinstance(stamp, str) and stamp >= cutoff}
+
+    def mark_sent(self, keys: list[str], now: datetime | None = None) -> None:
+        path = self._sent_path()
+        raw: dict[str, str] = {}
+        if path.exists():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                raw = {}
+        now = now or datetime.now()
+        stamp = now.isoformat(timespec="minutes")
+        cutoff = (now - timedelta(days=7)).isoformat(timespec="minutes")
+        raw = {key: value for key, value in raw.items() if isinstance(value, str) and value >= cutoff}
+        for key in keys:
+            raw[key] = stamp
+        self.root.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def pending_reminders(
+    data: dict[str, Any],
+    reminders: list[dict[str, Any]],
+    now: datetime,
+    sent_keys: set[str] | frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
+    """Return reminders that are due at ``now``.
+
+    A reminder becomes due once its lead time is reached and stays due until the
+    session starts; the caller owns the idempotency keys so a crash in the
+    middle of a push can simply be retried.
+    """
+    enabled = [r for r in reminders if r.get("enabled", True)]
+    if not enabled:
+        return []
+    due: list[dict[str, Any]] = []
+    for target in (now.date(), now.date() + timedelta(days=1)):
+        for event in occurrences_on(data, target):
+            ref = f"{event['course_id']}:{event['session_id']}"
+            start_dt = datetime.combine(target, _parse_time(event["start"]))
+            for reminder in enabled:
+                if reminder.get("session_ref") != ref:
+                    continue
+                minutes = int(reminder["minutes_before"])
+                remind_at = start_dt - timedelta(minutes=minutes)
+                key = f"{ref}@{target.isoformat()}"
+                if remind_at <= now < start_dt and key not in sent_keys:
+                    due.append({
+                        **event,
+                        "minutes_before": minutes,
+                        "remind_at": remind_at.isoformat(timespec="minutes"),
+                        "key": key,
+                    })
+    return due
+
+
+def format_reminder(event: dict[str, Any]) -> str:
+    """Render one due reminder as a short chat message."""
+    minutes = event["minutes_before"]
+    lead = "马上开始" if minutes == 0 else f"{minutes} 分钟后开始"
+    return (
+        f"提醒：{event['course_name']} {lead}\n"
+        f"{event['start']}-{event['end']}｜{event['location']}"
+    )

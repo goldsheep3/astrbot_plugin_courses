@@ -1,6 +1,6 @@
 name: astrbot_plugin_courses
 display_name: 课程表
 desc: 供 LLM 查询、编辑并管理课程提醒的个人课程表插件。
-version: v0.1.0
+version: v0.2.0
 author: GoldSheep3
-repo: https://github.com/goldsheep3/astrbot-plugin-courses
+repo: https://github.com/goldsheep3/astrbot_plugin_courses

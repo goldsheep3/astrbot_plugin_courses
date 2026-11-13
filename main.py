@@ -1,43 +1,137 @@
 """AstrBot adapters for the personal timetable service."""
 
+import asyncio
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.core.message.message_event_result import MessageChain
 
-from timetable_service import TimetableError, TimetableStore, format_agenda
+from timetable_service import (
+    TimetableError,
+    TimetableStore,
+    format_agenda,
+    format_reminder,
+    pending_reminders,
+)
 
 
-@register("course_timetable", "YourName", "可由 LLM 查询和编辑的个人课程表", "0.1.0")
+def _default_data_root() -> Path:
+    """Use AstrBot's plugin data directory so reinstalling the plugin keeps data."""
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
+
+        return Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_courses"
+    except Exception:  # pragma: no cover - standalone/test usage
+        return Path(__file__).resolve().parent / "data"
+
+
+@register("course_timetable", "GoldSheep3", "可由 LLM 查询和编辑的个人课程表", "0.2.0")
 class CourseTimetablePlugin(Star):
+    REMINDER_TICK_SECONDS = 60
+
     def __init__(self, context: Context):
         super().__init__(context)
         base_dir = Path(__file__).resolve().parent
-        self.store = TimetableStore(base_dir / "data", base_dir / "dev" / "course.json")
+        self.store = TimetableStore(_default_data_root(), base_dir / "dev" / "course.json")
+        self._reminder_task: asyncio.Task | None = None
+
+    async def initialize(self) -> None:
+        self._reminder_task = asyncio.create_task(self._reminder_loop())
+
+    async def terminate(self) -> None:
+        if self._reminder_task is not None:
+            self._reminder_task.cancel()
+            try:
+                await self._reminder_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._reminder_task = None
 
     def _user_id(self, event: AstrMessageEvent) -> str:
         get_id = getattr(event, "get_sender_id", None)
-        return str(get_id() if get_id else event.get_sender_name())
+        raw = str(get_id() if get_id else event.get_sender_name())
+        platform = getattr(event, "get_platform_name", None)
+        prefix = platform() if callable(platform) else ""
+        return TimetableStore.normalize(f"{prefix}:{raw}" if prefix else raw)
+
+    def _touch_session(self, event: AstrMessageEvent) -> str:
+        """Bind the current chat as the reminder delivery target."""
+        user_id = self._user_id(event)
+        session = getattr(event, "unified_msg_origin", None) or getattr(event, "session", None)
+        if session:
+            try:
+                self.store.bind_session(user_id, str(session))
+            except OSError:
+                pass
+        return user_id
+
+    async def _reminder_loop(self) -> None:
+        while True:
+            try:
+                await self._dispatch_reminders()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # keep the loop alive
+                self.logger.warning(f"课程提醒巡检失败：{exc}")
+            await asyncio.sleep(self.REMINDER_TICK_SECONDS)
+
+    async def _dispatch_reminders(self) -> None:
+        now = datetime.now()
+        sent = self.store.sent_keys()
+        for user_id in self.store.users_with_reminders():
+            session = self.store.session_of(user_id)
+            if not session:
+                continue
+            try:
+                data = self.store.load(user_id)
+                due = pending_reminders(data, self.store.list_reminders(user_id), now, sent)
+            except TimetableError as exc:
+                self.logger.warning(f"用户 {user_id} 的课表或提醒无效，跳过：{exc}")
+                continue
+            delivered: list[str] = []
+            for item in due:
+                try:
+                    await self.context.send_message(session, MessageChain().message(format_reminder(item)))
+                except Exception as exc:
+                    self.logger.warning(f"提醒推送失败（{item['key']}）：{exc}")
+                    continue
+                delivered.append(item["key"])
+            if delivered:
+                self.store.mark_sent(delivered, now)
 
     @filter.command("课表")
     async def timetable(self, event: AstrMessageEvent):
         """查询课表：/课表 今天、明天、日期 YYYY-MM-DD、导入示例、提醒"""
         argument = event.message_str.removeprefix("/课表").strip()
-        user_id = self._user_id(event)
+        user_id = self._touch_session(event)
         try:
             if argument == "导入示例":
                 data = self.store.import_example(user_id)
-                yield event.plain_result(f"已导入「{data['title']}」示例课表。")
+                yield event.plain_result(f"已导入「{data['title']}」示例课表（覆盖原有课表）。")
                 return
             if argument == "提醒":
                 reminders = self.store.list_reminders(user_id)
-                text = "\n".join(f"{r['session_ref']}：提前 {r['minutes_before']} 分钟" for r in reminders)
-                yield event.plain_result(text or "尚未设置提醒。可让 LLM 设置课前提醒。")
+                if not reminders:
+                    yield event.plain_result("尚未设置提醒。可让 LLM 设置课前提醒。")
+                    return
+                lines = [
+                    f"{r['session_ref']}：提前 {r['minutes_before']} 分钟"
+                    for r in reminders
+                    if r.get("enabled", True)
+                ]
+                lines.append("到点会自动推送到最近一次对话的会话。")
+                yield event.plain_result("\n".join(lines))
                 return
             today = date.today()
-            target = today if argument in ("", "今天") else today + timedelta(days=1) if argument == "明天" else date.fromisoformat(argument.removeprefix("日期 ").strip())
+            if argument in ("", "今天"):
+                target = today
+            elif argument == "明天":
+                target = today + timedelta(days=1)
+            else:
+                target = date.fromisoformat(argument.removeprefix("日期 ").strip())
             yield event.plain_result(format_agenda(self.store.load(user_id), target))
         except (TimetableError, ValueError) as exc:
             yield event.plain_result(f"课表操作失败：{exc}")
@@ -46,7 +140,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_query(self, event: AstrMessageEvent, target_date: str) -> str:
         """查询指定日期（YYYY-MM-DD）的课程、时间、地点和教师。"""
         try:
-            return format_agenda(self.store.load(self._user_id(event)), date.fromisoformat(target_date))
+            return format_agenda(self.store.load(self._touch_session(event)), date.fromisoformat(target_date))
         except (TimetableError, ValueError) as exc:
             return f"查询失败：{exc}"
 
@@ -54,7 +148,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_import(self, event: AstrMessageEvent, timetable_json: str) -> str:
         """导入完整课程表 JSON；调用前必须向用户确认覆盖其现有课表。"""
         try:
-            data = self.store.import_json(self._user_id(event), timetable_json)
+            data = self.store.import_json(self._touch_session(event), timetable_json)
             return f"已导入课表「{data['title']}」。"
         except TimetableError as exc:
             return f"导入失败：{exc}"
@@ -63,7 +157,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_update_session(self, event: AstrMessageEvent, course_id: str, session_id: str, session_json: str) -> str:
         """编辑一个已存在排课。session_json 必须包含 weeks、day、periods、location、teachers。"""
         try:
-            self.store.replace_session(self._user_id(event), course_id, session_id, json.loads(session_json))
+            self.store.replace_session(self._touch_session(event), course_id, session_id, json.loads(session_json))
             return "排课已更新。"
         except (TimetableError, json.JSONDecodeError) as exc:
             return f"更新失败：{exc}"
@@ -72,7 +166,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_add_session(self, event: AstrMessageEvent, course_id: str, session_json: str) -> str:
         """向已存在课程添加一个排课。session_json 必须含唯一 id、weeks、day、periods、location、teachers。"""
         try:
-            self.store.add_session(self._user_id(event), course_id, json.loads(session_json))
+            self.store.add_session(self._touch_session(event), course_id, json.loads(session_json))
             return "排课已添加。"
         except (TimetableError, json.JSONDecodeError) as exc:
             return f"添加失败：{exc}"
@@ -81,7 +175,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_delete_session(self, event: AstrMessageEvent, course_id: str, session_id: str) -> str:
         """删除指定排课；这是破坏性操作，调用前必须向用户确认。"""
         try:
-            self.store.delete_session(self._user_id(event), course_id, session_id)
+            self.store.delete_session(self._touch_session(event), course_id, session_id)
             return "排课已删除。"
         except TimetableError as exc:
             return f"删除失败：{exc}"
@@ -90,7 +184,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_set_reminder(self, event: AstrMessageEvent, course_id: str, session_id: str, minutes_before: int) -> str:
         """为课程排课设置课前提醒，minutes_before 范围为 0 到 1440。"""
         try:
-            self.store.set_reminder(self._user_id(event), course_id, session_id, minutes_before)
+            self.store.set_reminder(self._touch_session(event), course_id, session_id, minutes_before)
             return f"已设置提醒：{course_id}:{session_id} 开始前 {minutes_before} 分钟。"
         except TimetableError as exc:
             return f"设置失败：{exc}"
@@ -99,7 +193,7 @@ class CourseTimetablePlugin(Star):
     async def timetable_delete_reminder(self, event: AstrMessageEvent, course_id: str, session_id: str) -> str:
         """删除指定排课的提醒；调用前必须向用户确认。"""
         try:
-            deleted = self.store.delete_reminder(self._user_id(event), course_id, session_id)
+            deleted = self.store.delete_reminder(self._touch_session(event), course_id, session_id)
             return "提醒已删除。" if deleted else "该排课没有提醒。"
         except TimetableError as exc:
             return f"删除失败：{exc}"
