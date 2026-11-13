@@ -9,14 +9,24 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
-from timetable_service import (
-    TimetableError,
-    TimetableStore,
-    format_agenda,
-    format_exams,
-    format_reminder,
-    pending_reminders,
-)
+try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
+    from .timetable_service import (
+        TimetableError,
+        TimetableStore,
+        format_agenda,
+        format_exams,
+        format_reminder,
+        pending_reminders,
+    )
+except ImportError:  # 直接以脚本/测试方式运行时
+    from timetable_service import (
+        TimetableError,
+        TimetableStore,
+        format_agenda,
+        format_exams,
+        format_reminder,
+        pending_reminders,
+    )
 
 
 def _default_data_root() -> Path:
