@@ -10,6 +10,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
 try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
+    from . import timetable_edit as edit
     from .timetable_service import (
         TimetableError,
         TimetableStore,
@@ -19,6 +20,7 @@ try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
         pending_reminders,
     )
 except ImportError:  # 直接以脚本/测试方式运行时
+    import timetable_edit as edit
     from timetable_service import (
         TimetableError,
         TimetableStore,
@@ -280,4 +282,178 @@ class CourseTimetablePlugin(Star):
             deleted = self.store.delete_reminder(self._touch_session(event), course_id, session_id)
             return "提醒已删除。" if deleted else "该排课没有提醒。"
         except TimetableError as exc:
+            return f"删除失败：{exc}"
+
+
+    # ---------------------------------------------------------------- 课程层
+
+    @filter.llm_tool(name="timetable_query_course")
+    async def timetable_query_course(self, event: AstrMessageEvent, course_key: str) -> str:
+        """查询某门课程的详情（教师、各段排课、已设提醒）；course_key 传课程 id 或名称。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            course, _ = edit.find_course(data, course_key)
+            text = edit.describe_course(data, course)
+            prefix = f"{course.get('id')}:"
+            hits = [
+                f"  {r.get('session_ref')} 提前 {r.get('minutes_before')} 分钟"
+                for r in self.store.list_reminders(user_id)
+                if str(r.get("session_ref", "")).startswith(prefix)
+            ]
+            if hits:
+                text += "\n提醒：\n" + "\n".join(hits)
+            return text
+        except (TimetableError, ValueError) as exc:
+            return f"查询失败：{exc}"
+
+    @filter.llm_tool(name="timetable_add_course")
+    async def timetable_add_course(self, event: AstrMessageEvent, course_json: str) -> str:
+        """新增一门课程。course_json 需含 name 与 teachers（可为 ["王崇"]），可选 id 与 sessions。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            course = edit.add_course(data, json.loads(course_json))
+            self.store.save(user_id, data)
+            return f"已新增课程「{course['name']}」（id {course['id']}）。"
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"新增失败：{exc}"
+
+    @filter.llm_tool(name="timetable_update_course")
+    async def timetable_update_course(self, event: AstrMessageEvent, course_key: str, patch_json: str) -> str:
+        """修改课程元信息（name / teachers / id）；排课请用 session 工具，patch_json 为对象。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            course = edit.update_course(data, course_key, json.loads(patch_json))
+            self.store.save(user_id, data)
+            return f"已更新课程「{course['name']}」（id {course['id']}）。"
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"更新失败：{exc}"
+
+    @filter.llm_tool(name="timetable_delete_course")
+    async def timetable_delete_course(self, event: AstrMessageEvent, course_key: str) -> str:
+        """删除整门课程及其全部排课与提醒；这是破坏性操作，调用前必须向用户确认。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            course, refs = edit.delete_course(data, course_key)
+            self.store.save(user_id, data)
+            removed = 0
+            for course_id, session_id in refs:
+                if self.store.delete_reminder(user_id, course_id, session_id):
+                    removed += 1
+            extra = f"，同时清理 {removed} 条提醒" if removed else ""
+            return f"已删除课程「{course.get('name')}」及 {len(refs)} 段排课{extra}。"
+        except (TimetableError, ValueError) as exc:
+            return f"删除失败：{exc}"
+
+    # ---------------------------------------------------------------- 考试层
+
+    @filter.llm_tool(name="timetable_query_exam")
+    async def timetable_query_exam(self, event: AstrMessageEvent, exam_key: str) -> str:
+        """查询某场考试；exam_key 传考试 id、日期（YYYY-MM-DD）或科目名。传日期时返回当天全部考试。"""
+        try:
+            data = self.store.load(self._touch_session(event))
+            try:
+                target = date.fromisoformat(exam_key.strip())
+            except ValueError:
+                target = None
+            if target is not None:
+                same_day = [
+                    e for e in data.get("exams", [])
+                    if isinstance(e, dict) and str(e.get("time") or e.get("date")) == target.isoformat()
+                ]
+                if same_day:
+                    return "
+".join(edit.describe_exam(e) for e in same_day)
+            exam, _ = edit.find_exam(data, exam_key)
+            return edit.describe_exam(exam)
+        except (TimetableError, ValueError) as exc:
+            return f"查询失败：{exc}"
+
+    @filter.llm_tool(name="timetable_add_exam")
+    async def timetable_add_exam(self, event: AstrMessageEvent, exam_json: str) -> str:
+        """新增一场考试。exam_json 需含 course 与 time（YYYY-MM-DD），可选 start_at/end_at/location/type/id。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            exam = edit.add_exam(data, json.loads(exam_json))
+            self.store.save(user_id, data)
+            return "已新增考试：" + edit.describe_exam(exam)
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"新增失败：{exc}"
+
+    @filter.llm_tool(name="timetable_update_exam")
+    async def timetable_update_exam(self, event: AstrMessageEvent, exam_key: str, patch_json: str) -> str:
+        """修改某场考试；exam_key 传 id、日期或科目名，patch_json 为要改的字段对象。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            exam = edit.update_exam(data, exam_key, json.loads(patch_json))
+            self.store.save(user_id, data)
+            return "已更新考试：" + edit.describe_exam(exam)
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"更新失败：{exc}"
+
+    @filter.llm_tool(name="timetable_delete_exam")
+    async def timetable_delete_exam(self, event: AstrMessageEvent, exam_key: str) -> str:
+        """删除某场考试；这是破坏性操作，调用前必须向用户确认。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            exam = edit.delete_exam(data, exam_key)
+            self.store.save(user_id, data)
+            return "已删除考试：" + edit.describe_exam(exam)
+        except (TimetableError, ValueError) as exc:
+            return f"删除失败：{exc}"
+
+    # ---------------------------------------------------------------- 覆写层
+
+    @filter.llm_tool(name="timetable_list_overrides")
+    async def timetable_list_overrides(self, event: AstrMessageEvent) -> str:
+        """列出全部覆写（停课/调课/补课）。"""
+        try:
+            data = self.store.load(self._touch_session(event))
+            items = edit.list_overrides(data)
+            if not items:
+                return "当前没有覆写。"
+            return "覆写列表（序号可用于后续操作）：\n" + "\n".join(items)
+        except (TimetableError, ValueError) as exc:
+            return f"查询失败：{exc}"
+
+    @filter.llm_tool(name="timetable_add_override")
+    async def timetable_add_override(self, event: AstrMessageEvent, override_json: str) -> str:
+        """新增覆写。override_json 需含 session_ref（课程id:排课id）与 type（cancel/move/add）；move 与 add 还需 date（YYYY-MM-DD），可选 periods、location。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            override = edit.add_override(data, json.loads(override_json))
+            self.store.save(user_id, data)
+            return "已新增覆写：" + edit.describe_override(data, override)
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"新增失败：{exc}"
+
+    @filter.llm_tool(name="timetable_update_override")
+    async def timetable_update_override(self, event: AstrMessageEvent, override_key: str, patch_json: str) -> str:
+        """修改一条覆写；override_key 传覆写 id 或列表序号，patch_json 为要改的字段对象。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            override = edit.update_override(data, override_key, json.loads(patch_json))
+            self.store.save(user_id, data)
+            return "已更新覆写：" + edit.describe_override(data, override)
+        except (TimetableError, json.JSONDecodeError) as exc:
+            return f"更新失败：{exc}"
+
+    @filter.llm_tool(name="timetable_delete_override")
+    async def timetable_delete_override(self, event: AstrMessageEvent, override_key: str) -> str:
+        """删除一条覆写；这是破坏性操作，调用前必须向用户确认。"""
+        try:
+            user_id = self._touch_session(event)
+            data = self.store.load(user_id)
+            override = edit.delete_override(data, override_key)
+            self.store.save(user_id, data)
+            return "已删除覆写：" + edit.describe_override(data, override)
+        except (TimetableError, ValueError) as exc:
             return f"删除失败：{exc}"
