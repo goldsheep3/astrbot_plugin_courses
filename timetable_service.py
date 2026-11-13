@@ -107,7 +107,7 @@ def _override_kind(override: dict[str, Any]) -> str:
         return "add"
     if kind in OVERRIDE_MOVE:
         return "move"
-    if any(key in override for key in ("date", "start", "end", "periods", "location", "day")):
+    if any(key in override for key in ("date", "from_date", "from", "start", "end", "periods", "location", "day")):
         return "move"
     return "unknown"
 
@@ -119,6 +119,21 @@ def _override_date(override: dict[str, Any]) -> date | None:
     matches instead of taking the whole timetable down with it.
     """
     raw = override.get("date") or override.get("on") or override.get("day_date")
+    if not raw:
+        return None
+    try:
+        return _parse_date(str(raw))
+    except TimetableError:
+        return date.min
+
+
+def _override_source_date(override: dict[str, Any]) -> date | None:
+    """move 的源日期。
+
+    * 为空：整学期搬走，只在 ``date`` 那天出现（老语义）。
+    * 有值：只把 ``from_date`` 那一节挪到 ``date``，其余周次保持原样。
+    """
+    raw = override.get("from_date") or override.get("from")
     if not raw:
         return None
     try:
@@ -244,12 +259,19 @@ def _apply_overrides(
                     break
                 continue
             if kind == "move":
-                if moved_to is not None and moved_to != target:
-                    # Moved away from this date; it reappears on ``moved_to``.
+                source = _override_source_date(override)
+                if source is None:
+                    # 整学期搬：除目标日期外一律剔除
+                    if moved_to is not None and moved_to != target:
+                        dropped_refs.add(ref)
+                        break
+                    _patch_event(event, override, periods)
+                    break
+                # 单次搬：只在源日期剔除，其余周次原样保留
+                if source == target:
                     dropped_refs.add(ref)
                     break
-                _patch_event(event, override, periods)
-                break
+                continue
         if ref not in dropped_refs:
             kept.append(event)
 
@@ -316,27 +338,40 @@ def format_exams(data: dict[str, Any], target: date) -> str:
         )
     return "\n".join(lines)
 
+def _event_line(event: dict[str, Any]) -> str:
+    return (
+        f"{event['start']}-{event['end']} 第{','.join(map(str, event['periods']))}节 "
+        f"{event['course_name']}｜{event['location']}｜{('、'.join(event['teachers']))}"
+        + ("（调课）" if event.get("source") == "override" else "")
+    )
+
+
 def format_agenda(data: dict[str, Any], target: date) -> str:
+    """一天的完整安排，优先级：考试 > 覆写（调课/补课）> 常规课程。"""
     events = occurrences_on(data, target)
     header = f"{target.isoformat()}（第{((target - _parse_date(data['calendar']['first_monday'])).days // 7) + 1}周，周{WEEKDAY_NAMES[target.weekday()]}）"
     exams = exams_on(data, target)
-    exam_lines = []
-    for exam in exams:
-        location = exam.get("location") or {}
-        place = location.get("raw") if isinstance(location, dict) else str(location)
-        exam_lines.append(
-            f"【{exam.get('type', '考试')}】{exam.get('course', '?')} "
-            f"{exam.get('start_at', '?')}-{exam.get('end_at', '?')}｜{place or '地点待定'}"
-        )
-    if not events:
-        return "\n".join([f"{header}\n当天没有课程。", *exam_lines])
-    lines = [header, *exam_lines]
-    for event in events:
-        lines.append(
-            f"{event['start']}-{event['end']} 第{','.join(map(str, event['periods']))}节 "
-            f"{event['course_name']}｜{event['location']}｜{('、'.join(event['teachers']))}"
-            + ("（调课）" if event.get("source") == "override" else "")
-        )
+    overrides = [event for event in events if event.get("source") == "override"]
+    courses = [event for event in events if event.get("source") != "override"]
+
+    lines = [header]
+    if exams:
+        lines.append("【考试】")
+        for exam in exams:
+            location = exam.get("location") or {}
+            place = location.get("raw") if isinstance(location, dict) else str(location)
+            lines.append(
+                f"{exam.get('start_at', '?')}-{exam.get('end_at', '?')} "
+                f"{exam.get('course', '?')}（{exam.get('type', '考试')}）｜{place or '地点待定'}"
+            )
+    if overrides:
+        lines.append("【调课/补课】")
+        lines.extend(_event_line(event) for event in overrides)
+    if courses:
+        lines.append("【课程】")
+        lines.extend(_event_line(event) for event in courses)
+    if not (exams or overrides or courses):
+        lines.append("当天没有课程或考试。")
     return "\n".join(lines)
 
 

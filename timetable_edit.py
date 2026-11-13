@@ -389,6 +389,16 @@ def _normalize_override(data: dict[str, Any], override: Any, base: dict[str, Any
     elif kind in ("move", "add"):
         raise TimetableError(f"{kind} 类型的覆写必须指定 date（YYYY-MM-DD）")
 
+    raw_from = merged.pop("from", None) or merged.get("from_date")
+    if raw_from:
+        if kind != "move":
+            raise TimetableError("只有 move（调课）支持 from_date")
+        merged["from_date"] = _parse_date(_text(raw_from)).isoformat()
+        if merged.get("date") and merged["from_date"] == merged["date"]:
+            raise TimetableError("from_date 与 date 不能是同一天")
+    else:
+        merged.pop("from_date", None)
+
     if merged.get("periods") is not None:
         periods = merged["periods"]
         if not isinstance(periods, list) or not periods:
@@ -443,6 +453,9 @@ def describe_override(data: dict[str, Any], override: dict[str, Any], position: 
     except TimetableError:
         name = f"{ref}（课程已不存在）"
     when = _text(override.get("date")) or "每周"
+    source = _text(override.get("from_date"))
+    if source and kind == "move":
+        when = f"{source} → {when}"
     parts = [f"{position}. [{label}] {when} {name}"]
     if override.get("periods"):
         parts.append(f"节次 {override['periods']}")

@@ -216,7 +216,7 @@ class CourseTimetablePlugin(Star):
 
     @filter.llm_tool(name="timetable_query")
     async def timetable_query(self, event: AstrMessageEvent, target_date: str) -> str:
-        """查询指定日期（YYYY-MM-DD）的课程、时间、地点和教师。"""
+        """查询指定日期（YYYY-MM-DD）的全部安排：考试、调课/补课、常规课程（按此优先级展示）。"""
         try:
             return format_agenda(self.store.load(self._touch_session(event)), date.fromisoformat(target_date))
         except (TimetableError, ValueError) as exc:
@@ -257,14 +257,6 @@ class CourseTimetablePlugin(Star):
             return "排课已删除。"
         except TimetableError as exc:
             return f"删除失败：{exc}"
-
-    @filter.llm_tool(name="timetable_exams")
-    async def timetable_exams(self, event: AstrMessageEvent, target_date: str) -> str:
-        """查询指定日期（YYYY-MM-DD）的考试安排，含科目、类型、时间与地点。"""
-        try:
-            return format_exams(self.store.load(self._touch_session(event)), date.fromisoformat(target_date))
-        except (TimetableError, ValueError) as exc:
-            return f"查询失败：{exc}"
 
     @filter.llm_tool(name="timetable_set_reminder")
     async def timetable_set_reminder(self, event: AstrMessageEvent, course_id: str, session_id: str, minutes_before: int) -> str:
@@ -365,8 +357,7 @@ class CourseTimetablePlugin(Star):
                     if isinstance(e, dict) and str(e.get("time") or e.get("date")) == target.isoformat()
                 ]
                 if same_day:
-                    return "
-".join(edit.describe_exam(e) for e in same_day)
+                    return "\n".join(edit.describe_exam(e) for e in same_day)
             exam, _ = edit.find_exam(data, exam_key)
             return edit.describe_exam(exam)
         except (TimetableError, ValueError) as exc:
@@ -424,7 +415,7 @@ class CourseTimetablePlugin(Star):
 
     @filter.llm_tool(name="timetable_add_override")
     async def timetable_add_override(self, event: AstrMessageEvent, override_json: str) -> str:
-        """新增覆写。override_json 需含 session_ref（课程id:排课id）与 type（cancel/move/add）；move 与 add 还需 date（YYYY-MM-DD），可选 periods、location。"""
+        """新增覆写。override_json 需含 session_ref（课程id:排课id）与 type（cancel/move/add）；move 与 add 还需 date（YYYY-MM-DD），可选 periods、location。move 的 from_date 留空表示整学期搬走，填了则只把那一天的那节挪到 date。"""
         try:
             user_id = self._touch_session(event)
             data = self.store.load(user_id)

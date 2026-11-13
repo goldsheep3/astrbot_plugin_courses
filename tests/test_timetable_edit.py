@@ -263,3 +263,114 @@ def test_compress_weeks():
     assert edit.compress_weeks([1, 2, 3, 5, 7, 8]) == "1-3,5,7-8"
     assert edit.compress_weeks([4]) == "4"
     assert edit.compress_weeks([]) == "无"
+
+
+# ---------------------------------------------------------------- move 的 from_date
+
+
+def _saturday_store(tmp_path: Path):
+    """只有一门每周六第 1-2 节的课，覆盖第 10~12 周。"""
+    store = ts.TimetableStore(tmp_path)
+    data = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    data["courses"] = [
+        {
+            "id": "c1",
+            "name": "周六实验课",
+            "teachers": [{"index": "T1", "name": "王老师"}],
+            "sessions": [
+                {
+                    "id": "s1",
+                    "weeks": [10, 11, 12],
+                    "day": 6,
+                    "periods": [1, 2],
+                    "location": {"raw": "实验楼A101"},
+                    "teachers": ["T1"],
+                }
+            ],
+        }
+    ]
+    data["exams"] = []
+    data["overrides"] = []
+    store.import_json("u", data)
+    return store, "u"
+
+
+SAT = datetime.date(2026, 11, 14)
+SUN = datetime.date(2026, 11, 15)
+NEXT_SAT = datetime.date(2026, 11, 21)
+
+
+def test_move_with_from_date_only_moves_one_occurrence(tmp_path: Path):
+    """本周日上本周六的课，下周六照常上。"""
+    store, uid = _saturday_store(tmp_path)
+    data = store.load(uid)
+    edit.add_override(
+        data,
+        {"session_ref": "c1:s1", "type": "move", "from_date": "2026-11-14", "date": "2026-11-15"},
+    )
+    store.save(uid, data)
+    data = store.load(uid)
+
+    assert "没有课程或考试" in ts.format_agenda(data, SAT)
+    assert "周六实验课" in ts.format_agenda(data, SUN)
+    assert "周六实验课" in ts.format_agenda(data, NEXT_SAT)
+
+
+def test_move_without_from_date_moves_whole_term(tmp_path: Path):
+    """不给 from_date 时保持老语义：整学期只在目标日期出现。"""
+    store, uid = _saturday_store(tmp_path)
+    data = store.load(uid)
+    edit.add_override(data, {"session_ref": "c1:s1", "type": "move", "date": "2026-11-15"})
+    store.save(uid, data)
+    data = store.load(uid)
+
+    assert "没有课程或考试" in ts.format_agenda(data, SAT)
+    assert "周六实验课" in ts.format_agenda(data, SUN)
+    assert "没有课程或考试" in ts.format_agenda(data, NEXT_SAT)
+
+
+def test_move_from_date_can_override_periods_and_location(tmp_path: Path):
+    store, uid = _saturday_store(tmp_path)
+    data = store.load(uid)
+    edit.add_override(
+        data,
+        {
+            "session_ref": "c1:s1",
+            "type": "move",
+            "from_date": "2026-11-14",
+            "date": "2026-11-15",
+            "periods": [3, 4],
+            "location": "临时教室B",
+        },
+    )
+    store.save(uid, data)
+    text = ts.format_agenda(store.load(uid), SUN)
+    assert "第3,4节" in text and "临时教室B" in text
+
+
+def test_move_from_date_equal_date_rejected(tmp_path: Path):
+    _, _, data = make_store(tmp_path)
+    with pytest.raises(ts.TimetableError, match="不能是同一天"):
+        edit.add_override(
+            data,
+            {"session_ref": _first_ref(data), "type": "move", "from_date": "2026-11-14", "date": "2026-11-14"},
+        )
+
+
+def test_from_date_only_allowed_for_move(tmp_path: Path):
+    _, _, data = make_store(tmp_path)
+    with pytest.raises(ts.TimetableError, match="只有 move"):
+        edit.add_override(
+            data,
+            {"session_ref": _first_ref(data), "type": "cancel", "date": "2026-11-14", "from_date": "2026-11-14"},
+        )
+
+
+def test_override_description_shows_from_date(tmp_path: Path):
+    _, _, data = make_store(tmp_path)
+    edit.add_override(
+        data,
+        {"session_ref": _first_ref(data), "type": "move", "from_date": "2026-11-14", "date": "2026-11-15"},
+    )
+    line = edit.list_overrides(data)[0]
+    assert "2026-11-14 → 2026-11-15" in line

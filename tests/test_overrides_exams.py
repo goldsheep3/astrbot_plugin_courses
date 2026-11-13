@@ -135,7 +135,7 @@ def test_agenda_includes_exam_line(data):
     from timetable_service import format_agenda
 
     text = format_agenda(patched, MONDAY)
-    assert "【期末考试】软件工程" in text
+    assert "软件工程（期末考试）" in text
 
 
 def test_morning_report_setting_roundtrip(store):
