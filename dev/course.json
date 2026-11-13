@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "id": "20261",
+  "title": "2026-2027秋",
+  "calendar": {
+    "first_monday": "2026-08-31",
+    "week_count": 20,
+    "week_numbering": "1-based",
+    "day_numbering": "ISO-8601: 1=Mon .. 7=Sun"
+  },
+  "periods": [
+    { "index": 1, "start": "08:00", "end": "08:45", "section": "morning" },
+    { "index": 2, "start": "08:55", "end": "09:40", "section": "morning" },
+    { "index": 3, "start": "10:10", "end": "10:55", "section": "morning" },
+    { "index": 4, "start": "11:05", "end": "11:50", "section": "morning" },
+    { "index": 5, "start": "14:00", "end": "14:45", "section": "afternoon" },
+    { "index": 6, "start": "14:55", "end": "15:40", "section": "afternoon" },
+    { "index": 7, "start": "16:10", "end": "16:55", "section": "afternoon" },
+    { "index": 8, "start": "17:05", "end": "17:50", "section": "afternoon" },
+    { "index": 9, "start": "19:00", "end": "19:45", "section": "evening" },
+    { "index": 10, "start": "19:55", "end": "20:40", "section": "evening" },
+    { "index": 11, "start": "20:45", "end": "21:30", "section": "evening" },
+    { "index": 12, "start": "21:30", "end": "22:15", "section": "evening" }
+  ],
+  "courses": [
+    {
+      "id": "2126801",
+      "name": "程序设计基础综合课程设计",
+      "teachers": [
+        { "index": "A1B2C3D", "name": "王崇" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [17, 18],
+          "day": 3,
+          "periods": [7],
+          "location": {
+            "raw": "中区实践虚拟实践虚拟计控",
+            "campus": "中区",
+            "building": "实践虚拟",
+            "room": "实践虚拟计控"
+          },
+          "teachers": ["A1B2C3D"]
+        }
+      ]
+    },
+    {
+      "id": "23101012",
+      "name": "中国近现代史纲要",
+      "teachers": [
+        { "index": "E4F5G6H", "name": "姜玲玲" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [5, 6, 7, 8, 9, 10, 11],
+          "day": 2,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)523",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "523"
+          },
+          "teachers": ["E4F5G6H"]
+        },
+        {
+          "id": "s2",
+          "weeks": [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 4,
+          "periods": [7, 8],
+          "location": {
+            "raw": "西区守正楼(1教)414",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "414"
+          },
+          "teachers": ["E4F5G6H"]
+        }
+      ]
+    },
+    {
+      "id": "2002002",
+      "name": "程序设计基础",
+      "teachers": [
+        { "index": "A1B2C3D", "name": "王崇" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 1,
+          "periods": [7, 8],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["A1B2C3D"]
+        },
+        {
+          "id": "s2",
+          "weeks": [1, 2, 3, 4],
+          "day": 2,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["A1B2C3D"]
+        },
+        {
+          "id": "s3",
+          "weeks": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 5,
+          "periods": [7, 8],
+          "location": {
+            "raw": "西二区博才楼(6教)427",
+            "campus": "西二区",
+            "building": "博才楼(6教)",
+            "room": "427"
+          },
+          "teachers": ["A1B2C3D"]
+        }
+      ]
+    },
+    {
+      "id": "2102013",
+      "name": "数据结构与算法",
+      "teachers": [
+        { "index": "J7K8L9M", "name": "黄德海" },
+        { "index": "N0P1Q2R", "name": "石晶晶" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [13, 14, 15, 16],
+          "day": 2,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西二区博才楼(6教)427",
+            "campus": "西二区",
+            "building": "博才楼(6教)",
+            "room": "427"
+          },
+          "teachers": ["J7K8L9M", "N0P1Q2R"]
+        },
+        {
+          "id": "s2",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8],
+          "day": 2,
+          "periods": [7, 8],
+          "location": {
+            "raw": "西区守正楼(1教)420",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "420"
+          },
+          "teachers": ["J7K8L9M", "N0P1Q2R"]
+        },
+        {
+          "id": "s3",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 3,
+          "periods": [1, 2],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["J7K8L9M", "N0P1Q2R"]
+        }
+      ]
+    },
+    {
+      "id": "2102021",
+      "name": "数据库原理",
+      "teachers": [
+        { "index": "S3T4U5V", "name": "马卉宇" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 1,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)122",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "122"
+          },
+          "teachers": ["S3T4U5V"]
+        },
+        {
+          "id": "s2",
+          "weeks": [5, 6, 7, 8, 9, 10, 11, 12],
+          "day": 3,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)420",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "420"
+          },
+          "teachers": ["S3T4U5V"]
+        },
+        {
+          "id": "s3",
+          "weeks": [13, 14, 15, 16],
+          "day": 3,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西二区博才楼(6教)608",
+            "campus": "西二区",
+            "building": "博才楼(6教)",
+            "room": "608"
+          },
+          "teachers": ["S3T4U5V"]
+        }
+      ]
+    },
+    {
+      "id": "2102802",
+      "name": "离散数学",
+      "teachers": [
+        { "index": "W6X7Y8Z", "name": "韩金库" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 2,
+          "periods": [5, 6],
+          "location": {
+            "raw": "西区守正楼(1教)422",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "422"
+          },
+          "teachers": ["W6X7Y8Z"]
+        }
+      ]
+    },
+    {
+      "id": "2002010",
+      "name": "Java程序设计",
+      "teachers": [
+        { "index": "C9D0E1F", "name": "王军" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4],
+          "day": 3,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)420",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "420"
+          },
+          "teachers": ["C9D0E1F"]
+        },
+        {
+          "id": "s2",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 4,
+          "periods": [5, 6],
+          "location": {
+            "raw": "西区守正楼(1教)420",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "420"
+          },
+          "teachers": ["C9D0E1F"]
+        },
+        {
+          "id": "s3",
+          "weeks": [9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 6,
+          "periods": [5, 6],
+          "location": {
+            "raw": "西二区博才楼(6教)427",
+            "campus": "西二区",
+            "building": "博才楼(6教)",
+            "room": "427"
+          },
+          "teachers": ["C9D0E1F"]
+        }
+      ]
+    },
+    {
+      "id": "2103006",
+      "name": "专业英语",
+      "teachers": [
+        { "index": "G2H3I4J", "name": "杜鹃" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+          "day": 4,
+          "periods": [3, 4],
+          "location": {
+            "raw": "西区守正楼(1教)414",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "414"
+          },
+          "teachers": ["G2H3I4J"]
+        }
+      ]
+    },
+    {
+      "id": "2103008",
+      "name": "软件工程",
+      "teachers": [
+        { "index": "G2H3I4J", "name": "杜鹃" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 1,
+          "periods": [5, 6],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["G2H3I4J"]
+        }
+      ]
+    },
+    {
+      "id": "2113224",
+      "name": "Linux系统及应用",
+      "teachers": [
+        { "index": "K5L6M7N", "name": "姜翠霞" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+          "day": 4,
+          "periods": [1, 2],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["K5L6M7N"]
+        },
+        {
+          "id": "s2",
+          "weeks": [13, 14, 15, 16],
+          "day": 5,
+          "periods": [1, 2],
+          "location": {
+            "raw": "西二区博才楼(6教)427",
+            "campus": "西二区",
+            "building": "博才楼(6教)",
+            "room": "427"
+          },
+          "teachers": ["K5L6M7N"]
+        }
+      ]
+    },
+    {
+      "id": "2114009",
+      "name": "系统仿真与调试软件应用",
+      "teachers": [
+        { "index": "O8P9Q0R", "name": "刘彦忠" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 1,
+          "periods": [1, 2],
+          "location": {
+            "raw": "西区守正楼(1教)419",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "419"
+          },
+          "teachers": ["O8P9Q0R"]
+        }
+      ]
+    },
+    {
+      "id": "35107002",
+      "name": "大学生创新创业导论",
+      "teachers": [
+        { "index": "S1T2U3V", "name": "程伟东" }
+      ],
+      "sessions": [
+        {
+          "id": "s1",
+          "weeks": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+          "day": 5,
+          "periods": [5, 6],
+          "location": {
+            "raw": "西区守正楼(1教)阶203",
+            "campus": "西区",
+            "building": "守正楼(1教)",
+            "room": "阶203"
+          },
+          "teachers": ["S1T2U3V"]
+        }
+      ]
+    }
+  ],
+  "exams": [
+    {
+      "id": "210202101",
+      "course": "2102021",
+      "type": "期末考试",
+      "time": "2027-01-09",
+      "start_at": "14:00",
+      "end_at": "17:00",
+      "location": {
+        "raw": "西区守正楼(1教)J201",
+        "campus": "西区",
+        "building": "守正楼(1教)",
+        "room": "J201"
+      }
+    }
+  ],
+  "overrides": []
+}

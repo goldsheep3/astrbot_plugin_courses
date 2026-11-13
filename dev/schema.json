@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semester-timetable.schema.json",
+  "title": "Semester Timetable Resource",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "calendar",
+    "periods",
+    "courses",
+    "exams",
+    "overrides"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "calendar": {
+      "$ref": "#/$defs/calendar"
+    },
+    "periods": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/period"
+      }
+    },
+    "courses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/course"
+      }
+    },
+    "exams": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exam"
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/override"
+      }
+    }
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+    },
+    "calendar": {
+      "type": "object",
+      "required": [
+        "first_monday",
+        "week_count",
+        "week_numbering",
+        "day_numbering"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "first_monday": {
+          "$ref": "#/$defs/date"
+        },
+        "week_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "week_numbering": {
+          "const": "1-based"
+        },
+        "day_numbering": {
+          "const": "ISO-8601: 1=Mon .. 7=Sun"
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "required": [
+        "index",
+        "start",
+        "end",
+        "section"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start": {
+          "$ref": "#/$defs/time"
+        },
+        "end": {
+          "$ref": "#/$defs/time"
+        },
+        "section": {
+          "type": "string",
+          "enum": [
+            "morning",
+            "afternoon",
+            "evening"
+          ]
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": [
+        "raw"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "type": "string",
+          "minLength": 1
+        },
+        "campus": {
+          "type": "string"
+        },
+        "building": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        }
+      }
+    },
+    "teacher": {
+      "type": "object",
+      "required": [
+        "index",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "description": "session 的全局引用键为 courses.id:session.id，例如 2002002:s1。",
+      "required": [
+        "id",
+        "weeks",
+        "day",
+        "periods",
+        "location",
+        "teachers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "weeks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "periods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "teachers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "course": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "teachers",
+        "sessions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "teachers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/teacher"
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/session"
+          }
+        }
+      }
+    },
+    "exam": {
+      "type": "object",
+      "required": [
+        "id",
+        "course",
+        "type",
+        "time",
+        "start_at",
+        "end_at",
+        "location"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "course": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "期末考试",
+            "期中考试",
+            "补考",
+            "其他"
+          ]
+        },
+        "time": {
+          "$ref": "#/$defs/date"
+        },
+        "start_at": {
+          "$ref": "#/$defs/time"
+        },
+        "end_at": {
+          "$ref": "#/$defs/time"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        }
+      }
+    },
+    "override": {
+      "type": "object",
+      "description": "覆盖项占位。当前 overrides 为空；未来建议使用 session_ref 引用 courses.id:session.id。",
+      "properties": {
+        "session_ref": {
+          "type": "string",
+          "pattern": "^[^:]+:[^:]+$"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
