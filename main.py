@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 
 try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
+    from . import llm_polish
     from . import timetable_edit as edit
     from .timetable_service import (
         TimetableError,
@@ -20,6 +22,7 @@ try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
         pending_reminders,
     )
 except ImportError:  # 直接以脚本/测试方式运行时
+    import llm_polish
     import timetable_edit as edit
     from timetable_service import (
         TimetableError,
@@ -41,14 +44,15 @@ def _default_data_root() -> Path:
         return Path(__file__).resolve().parent / "data"
 
 
-@register("course_timetable", "GoldSheep3", "可由 LLM 查询和编辑的个人课程表", "0.2.0")
+@register("course_timetable", "GoldSheep3", "可由 LLM 查询和编辑的个人课程表", "0.3.0")
 class CourseTimetablePlugin(Star):
     REMINDER_TICK_SECONDS = 60
 
-    def __init__(self, context: Context):
-        super().__init__(context)
+    def __init__(self, context: Context, config: dict | None = None):
+        super().__init__(context, config)
         base_dir = Path(__file__).resolve().parent
         self.store = TimetableStore(_default_data_root(), base_dir / "dev" / "course.json")
+        self._config = config or {}
         self._reminder_task: asyncio.Task | None = None
 
     async def initialize(self) -> None:
@@ -69,6 +73,75 @@ class CourseTimetablePlugin(Star):
         platform = getattr(event, "get_platform_name", None)
         prefix = platform() if callable(platform) else ""
         return TimetableStore.normalize(f"{prefix}:{raw}" if prefix else raw)
+
+    def _config_value(self, key: str, default):
+        """读插件配置，兼容 AstrBotConfig 与普通 dict；类型不对时用默认值。"""
+        try:
+            value = self._config.get(key, default)
+        except AttributeError:
+            return default
+        if isinstance(default, bool):
+            if isinstance(value, str):
+                return value.strip().lower() in ("1", "true", "yes", "on")
+            return bool(default if value is None else value)
+        if isinstance(default, float):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+        if isinstance(default, int):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+        return default if value is None else value
+
+    async def _polish_text(
+        self,
+        base_text: str,
+        facts: list[str],
+        umo: str | None,
+        *,
+        enabled: bool,
+        extra_hint: str | None = None,
+    ) -> str:
+        """让 LLM 改写文案；任何异常、超时或事实丢失都静默回落到模板。"""
+        if not enabled or not base_text.strip():
+            return base_text
+        try:
+            provider = await self.context.get_using_provider_async(umo=umo)
+        except Exception as exc:  # 没配 provider 时这里就可能抛
+            self.logger.debug(f"提醒润色跳过（无可用 provider）：{exc}")
+            return base_text
+        if provider is None:
+            return base_text
+
+        async def generate(system_prompt: str, user_prompt: str) -> str:
+            response = await provider.text_chat(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+            )
+            return getattr(response, "completion_text", "") or ""
+
+        return await llm_polish.polish_text(
+            base_text,
+            facts,
+            generate,
+            timeout=self._config_value("llm_timeout_seconds", 8.0),
+            max_extra_chars=self._config_value("llm_max_extra_chars", 120),
+            extra_hint=extra_hint,
+        )
+
+    @staticmethod
+    def _agenda_facts(base_text: str) -> list[str]:
+        """从早报模板里抠出必须原样保留的时间与地点。"""
+        facts: list[str] = []
+        for line in base_text.splitlines():
+            if "｜" in line:
+                facts.append(line.split("｜", 1)[1].strip())
+            for token in re.findall(r"\d{1,2}:\d{2}", line):
+                facts.append(token)
+        return facts
 
     def _touch_session(self, event: AstrMessageEvent) -> str:
         """Bind the current chat as the reminder delivery target."""
@@ -114,6 +187,14 @@ class CourseTimetablePlugin(Star):
                 continue
             try:
                 agenda = format_agenda(self.store.load(user_id), now.date())
+                agenda = await self._polish_text(
+                    agenda,
+                    self._agenda_facts(agenda),
+                    session,
+                    enabled=self._config_value("llm_polish", True)
+                    and self._config_value("llm_polish_morning_report", True),
+                    extra_hint="早报，语气轻快，顺带提醒做好准备",
+                )
                 await self.context.send_message(session, MessageChain().message(agenda))
             except Exception as exc:
                 self.logger.warning(f"早报推送失败（{user_id}）：{exc}")
@@ -141,7 +222,20 @@ class CourseTimetablePlugin(Star):
             delivered: list[str] = []
             for item in due:
                 try:
-                    await self.context.send_message(session, MessageChain().message(format_reminder(item)))
+                    base = format_reminder(item)
+                    facts = [
+                        item.get("course_name"),
+                        item.get("start"),
+                        item.get("end"),
+                        item.get("location"),
+                    ]
+                    text = await self._polish_text(
+                        base,
+                        [str(fact) for fact in facts if fact],
+                        session,
+                        enabled=self._config_value("llm_polish", True),
+                    )
+                    await self.context.send_message(session, MessageChain().message(text))
                 except Exception as exc:
                     self.logger.warning(f"提醒推送失败（{item['key']}）：{exc}")
                     continue

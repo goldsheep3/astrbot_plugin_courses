@@ -1,0 +1,26 @@
+{
+  "llm_polish": {
+    "type": "bool",
+    "description": "用 LLM 润色提醒文案",
+    "hint": "开启后，课前提醒与早报会先由当前对话模型改写语气；课程名、时间、地点仍来自课表数据，润色失败或超时会自动回落到模板文案。",
+    "default": true
+  },
+  "llm_polish_morning_report": {
+    "type": "bool",
+    "description": "早报也走 LLM 润色",
+    "hint": "关闭时早报保持模板输出，仅课前提醒润色。",
+    "default": true
+  },
+  "llm_timeout_seconds": {
+    "type": "float",
+    "description": "LLM 润色超时（秒）",
+    "hint": "超时即回落模板，建议 5 到 10 秒。",
+    "default": 8.0
+  },
+  "llm_max_extra_chars": {
+    "type": "int",
+    "description": "允许比模板多出的字数",
+    "hint": "防止模型输出过长刷屏；超出上限的文案会被丢弃并回落模板。",
+    "default": 120
+  }
+}
