@@ -179,7 +179,7 @@ class CourseTimetablePlugin(Star):
                 continue
             if now.time() < report_time:
                 continue
-            key = f"morning@{now.date().isoformat()}"
+            key = f"{user_id}|morning@{now.date().isoformat()}"
             if key in sent:
                 continue
             session = self.store.session_of(user_id)
