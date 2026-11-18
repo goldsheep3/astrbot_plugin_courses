@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>周课表</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <div>
+          <p class="eyebrow">COURSE TIMETABLE</p>
+          <h1>周课表</h1>
+          <p class="subtitle" id="term-title">查看课程与考试安排</p>
+        </div>
+        <label class="user-picker">课表用户
+          <select id="user-select" aria-label="课表用户" disabled></select>
+        </label>
+      </header>
+
+      <section class="toolbar" aria-label="周次导航">
+        <div class="week-heading">
+          <strong id="week-label">正在加载…</strong>
+          <span id="week-number"></span>
+        </div>
+        <div class="controls">
+          <button id="previous-week" type="button" aria-label="上一周">‹ 上一周</button>
+          <button id="today" type="button">本周</button>
+          <button id="next-week" type="button" aria-label="下一周">下一周 ›</button>
+          <label class="date-picker">跳转日期 <input id="date-input" type="date"></label>
+        </div>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <section id="week-grid" class="week-grid" aria-label="一周课程安排"></section>
+      <footer class="footer">只读视图 · 课程、调课和考试以已保存课表为准</footer>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

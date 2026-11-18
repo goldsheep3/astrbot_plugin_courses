@@ -1,0 +1,8 @@
+{
+  "pages": {
+    "timetable": {
+      "title": "周课表",
+      "description": "查看用户的每周课程、调课与考试安排。"
+    }
+  }
+}

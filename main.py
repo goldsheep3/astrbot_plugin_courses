@@ -8,6 +8,7 @@ from pathlib import Path
 
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.api.web import error_response, json_response, request
 from astrbot.core.message.message_event_result import MessageChain
 
 try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
@@ -20,6 +21,7 @@ try:  # AstrBot 以 data.plugins.<dir>.main 的形式按子包导入
         format_exams,
         format_reminder,
         pending_reminders,
+        week_view,
     )
 except ImportError:  # 直接以脚本/测试方式运行时
     import llm_polish
@@ -31,6 +33,7 @@ except ImportError:  # 直接以脚本/测试方式运行时
         format_exams,
         format_reminder,
         pending_reminders,
+        week_view,
     )
 
 
@@ -54,6 +57,29 @@ class CourseTimetablePlugin(Star):
         self.store = TimetableStore(_default_data_root(), base_dir / "dev" / "course.json")
         self._config = config or {}
         self._reminder_task: asyncio.Task | None = None
+        context.register_web_api(
+            "/astrbot_plugin_courses/users", self.web_users, ["GET"], "List timetable owners"
+        )
+        context.register_web_api(
+            "/astrbot_plugin_courses/week", self.web_week, ["GET"], "Read a weekly timetable"
+        )
+
+    async def web_users(self):
+        return json_response({"users": self.store.users()})
+
+    async def web_week(self):
+        user_id = request.query.get("user", "")
+        if not user_id or user_id not in self.store.users():
+            return error_response("课表用户不存在", status_code=404)
+        raw_date = request.query.get("date", "")
+        try:
+            target = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            return error_response("日期必须使用 YYYY-MM-DD 格式", status_code=400)
+        try:
+            return json_response(week_view(self.store.load(user_id), target))
+        except TimetableError as exc:
+            return error_response(str(exc), status_code=422)
 
     async def initialize(self) -> None:
         self._reminder_task = asyncio.create_task(self._reminder_loop())

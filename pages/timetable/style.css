@@ -1,0 +1,79 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  background: #f5f7fb;
+  color: #172438;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, select, input { font: inherit; }
+
+.page { max-width: 1600px; margin: 0 auto; padding: 28px 24px 20px; }
+.header, .toolbar, .controls, .week-heading, .day-header { display: flex; align-items: center; }
+.header { justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.eyebrow { margin: 0 0 6px; color: #4f6db4; font-size: 11px; font-weight: 800; letter-spacing: .18em; }
+h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.03em; }
+.subtitle { margin: 7px 0 0; color: #66748a; font-size: 14px; }
+.user-picker, .date-picker { display: flex; gap: 9px; align-items: center; color: #596a82; font-size: 13px; font-weight: 600; white-space: nowrap; }
+select, input, button { border: 1px solid #dce3ef; border-radius: 10px; background: #fff; color: #21334d; }
+select, input { padding: 9px 12px; }
+select { max-width: 300px; min-width: 180px; }
+button { cursor: pointer; padding: 9px 12px; font-weight: 650; }
+button:hover, button:focus-visible { border-color: #7195ec; color: #315bc0; }
+.toolbar { justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 18px; background: #fff; border: 1px solid #e1e7f1; border-radius: 15px; margin-bottom: 14px; }
+.week-heading { gap: 12px; flex-wrap: wrap; }
+.week-heading strong { font-size: 17px; }
+.week-heading span { padding: 5px 9px; border-radius: 7px; background: #eef3ff; color: #315bc0; font-size: 12px; font-weight: 700; }
+.controls { gap: 8px; flex-wrap: wrap; }
+.date-picker { margin-left: 6px; }
+.status { margin: 14px 0; color: #5b6880; font-size: 14px; }
+.status.error { color: #b32e42; }
+.week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.day { min-width: 0; min-height: 250px; padding: 10px; border: 1px solid #e2e8f2; border-radius: 14px; background: #fff; }
+.day.today { border-color: #91aaf4; box-shadow: 0 0 0 2px #e8eeff inset; }
+.day-header { justify-content: space-between; gap: 5px; padding: 4px 3px 12px; margin-bottom: 10px; border-bottom: 1px solid #edf0f5; }
+.day-name { font-weight: 800; }
+.day-date { color: #77859b; font-size: 12px; }
+.empty-day { margin: 20px 2px; color: #a0aab9; font-size: 13px; text-align: center; }
+.event { min-width: 0; padding: 11px; margin-bottom: 8px; border-radius: 10px; border-left: 3px solid #5682dd; background: #eff5ff; }
+.event.changed { border-left-color: #bd8040; background: #fff7eb; }
+.event.exam { border-left-color: #ba6078; background: #fff0f3; }
+.event p, .event h3 { margin: 0; overflow-wrap: anywhere; }
+.event-time { color: #335eae; font-size: 12px; font-weight: 800; }
+.event.changed .event-time { color: #976022; }
+.event.exam .event-time { color: #a4415c; }
+.event-title { padding: 6px 0; font-size: 14px; line-height: 1.4; }
+.event-meta, .event-location { color: #64748a; font-size: 12px; line-height: 1.45; }
+.event-location { padding-top: 6px; }
+.footer { margin-top: 20px; color: #96a0af; font-size: 12px; text-align: right; }
+
+@media (max-width: 1100px) {
+  .week-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .page { padding: 18px 12px; }
+  .header { align-items: stretch; flex-direction: column; }
+  .user-picker { justify-content: space-between; }
+  select { width: min(72%, 300px); }
+  .week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .day { min-height: 150px; }
+}
+@media (max-width: 420px) {
+  .week-grid { grid-template-columns: 1fr; }
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  background: #101826;
+  color: #e8effc;
+}
+html[data-theme="dark"] .subtitle, html[data-theme="dark"] .user-picker, html[data-theme="dark"] .date-picker { color: #a6b4c9; }
+html[data-theme="dark"] .toolbar, html[data-theme="dark"] .day { background: #1a2638; border-color: #34435a; }
+html[data-theme="dark"] select, html[data-theme="dark"] input, html[data-theme="dark"] button { background: #202e43; border-color: #42536b; color: #e8effc; }
+html[data-theme="dark"] .week-heading span { background: #273c66; color: #b9cfff; }
+html[data-theme="dark"] .day-header { border-color: #34435a; }
+html[data-theme="dark"] .day-date, html[data-theme="dark"] .event-meta, html[data-theme="dark"] .event-location { color: #a8b7ca; }
+html[data-theme="dark"] .event.course { background: #223a5d; }
+html[data-theme="dark"] .event.changed { background: #473620; }
+html[data-theme="dark"] .event.exam { background: #4a2939; }

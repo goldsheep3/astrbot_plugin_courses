@@ -324,6 +324,42 @@ def exams_on(data: dict[str, Any], target: date) -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: str(item.get("start_at", "")))
 
 
+def week_view(data: dict[str, Any], target: date) -> dict[str, Any]:
+    """Return seven days of courses and exams for a read-only calendar view."""
+    validate_timetable(data)
+    monday = target - timedelta(days=target.weekday())
+    first_monday = _parse_date(data["calendar"]["first_monday"])
+    course_names = {course["id"]: course["name"] for course in data["courses"]}
+    days = []
+    for offset in range(7):
+        day = monday + timedelta(days=offset)
+        exams = []
+        for exam in exams_on(data, day):
+            location = exam.get("location") or {}
+            exams.append({
+                "id": exam.get("id", ""),
+                "name": course_names.get(exam.get("course"), exam.get("course", "考试")),
+                "type": exam.get("type", "考试"),
+                "start": exam.get("start_at", ""),
+                "end": exam.get("end_at", ""),
+                "location": location.get("raw", "") if isinstance(location, dict) else str(location),
+            })
+        days.append({
+            "date": day.isoformat(),
+            "weekday": WEEKDAY_NAMES[day.weekday()],
+            "courses": occurrences_on(data, day),
+            "exams": exams,
+        })
+    week_number = (monday - first_monday).days // 7 + 1
+    return {
+        "title": data["title"],
+        "week_start": monday.isoformat(),
+        "week_end": (monday + timedelta(days=6)).isoformat(),
+        "week_number": week_number if 1 <= week_number <= data["calendar"]["week_count"] else None,
+        "days": days,
+    }
+
+
 def format_exams(data: dict[str, Any], target: date) -> str:
     exams = exams_on(data, target)
     if not exams:
